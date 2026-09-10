@@ -111,6 +111,8 @@ def test_rendered_instructions_preserve_scan_root_and_runnable_commands():
     for artifact in watch_artifacts:
         assert 'graphify.watch "INPUT_PATH"' in artifact.content, artifact.path
         assert "graphify.watch INPUT_PATH" not in artifact.content, artifact.path
+
+    for artifact in artifacts:
         assert "'INPUT_PATH'" not in artifact.content, artifact.path
         assert "'SPEC_PATH'" not in artifact.content, artifact.path
 
