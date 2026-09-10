@@ -94,6 +94,14 @@ def test_rendered_instructions_preserve_scan_root_and_runnable_commands():
             if line.startswith('{"nodes":'):
                 json.loads(line)
 
+    direct_loaders = [
+        artifact.path
+        for artifact in artifacts
+        if "json_graph.node_link_graph(" in artifact.content
+    ]
+    assert direct_loaders == []
+    assert any("load_node_link_graph(" in artifact.content for artifact in artifacts)
+
     exports = [
         artifact
         for artifact in artifacts

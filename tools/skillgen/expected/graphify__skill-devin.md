@@ -959,13 +959,13 @@ $(cat graphify-out/.graphify_python) -c "
 import sys, json
 from graphify.build import build_from_json
 from graphify.export import to_json
-from networkx.readwrite import json_graph
+from graphify.paths import load_node_link_graph
 import networkx as nx
 from pathlib import Path
 
 # Load existing graph
 existing_data = json.loads(Path('graphify-out/graph.json').read_text())
-G_existing = json_graph.node_link_graph(existing_data, edges='links')
+G_existing = load_node_link_graph(existing_data)
 
 # Load new extraction
 new_extraction = json.loads(Path('graphify-out/.graphify_extract.json').read_text())
@@ -986,7 +986,7 @@ $(cat graphify-out/.graphify_python) -c "
 import json
 from graphify.analyze import graph_diff
 from graphify.build import build_from_json
-from networkx.readwrite import json_graph
+from graphify.paths import load_node_link_graph
 import networkx as nx
 from pathlib import Path
 
@@ -995,7 +995,7 @@ new_extract = json.loads(Path('graphify-out/.graphify_extract.json').read_text()
 G_new = build_from_json(new_extract, directed=IS_DIRECTED)
 
 if old_data:
-    G_old = json_graph.node_link_graph(old_data, edges='links')
+    G_old = load_node_link_graph(old_data)
     diff = graph_diff(G_old, G_new)
     print(diff['summary'])
     if diff['new_nodes']:
@@ -1021,12 +1021,12 @@ from graphify.cluster import cluster, score_all
 from graphify.analyze import god_nodes, surprising_connections
 from graphify.report import generate
 from graphify.export import to_json
-from networkx.readwrite import json_graph
+from graphify.paths import load_node_link_graph
 import networkx as nx
 from pathlib import Path
 
 data = json.loads(Path('graphify-out/graph.json').read_text())
-G = json_graph.node_link_graph(data, edges='links')
+G = load_node_link_graph(data)
 
 detection = {'total_files': 0, 'total_words': 99999, 'needs_graph': True, 'warning': None,
              'files': {'code': [], 'document': [], 'paper': []}}
@@ -1090,12 +1090,12 @@ Load `graphify-out/graph.json`, then:
 ```bash
 $(cat graphify-out/.graphify_python) -c "
 import sys, json
-from networkx.readwrite import json_graph
+from graphify.paths import load_node_link_graph
 import networkx as nx
 from pathlib import Path
 
 data = json.loads(Path('graphify-out/graph.json').read_text())
-G = json_graph.node_link_graph(data, edges='links')
+G = load_node_link_graph(data)
 
 question = 'QUESTION'
 mode = 'MODE'  # 'bfs' or 'dfs'
@@ -1202,11 +1202,11 @@ if not Path('graphify-out/graph.json').exists():
 $(cat graphify-out/.graphify_python) -c "
 import json, sys
 import networkx as nx
-from networkx.readwrite import json_graph
+from graphify.paths import load_node_link_graph
 from pathlib import Path
 
 data = json.loads(Path('graphify-out/graph.json').read_text())
-G = json_graph.node_link_graph(data, edges='links')
+G = load_node_link_graph(data)
 
 a_term = 'NODE_A'
 b_term = 'NODE_B'
@@ -1274,11 +1274,11 @@ if not Path('graphify-out/graph.json').exists():
 $(cat graphify-out/.graphify_python) -c "
 import json, sys
 import networkx as nx
-from networkx.readwrite import json_graph
+from graphify.paths import load_node_link_graph
 from pathlib import Path
 
 data = json.loads(Path('graphify-out/graph.json').read_text())
-G = json_graph.node_link_graph(data, edges='links')
+G = load_node_link_graph(data)
 
 term = 'NODE_NAME'
 term_lower = term.lower()

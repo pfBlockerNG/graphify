@@ -1147,6 +1147,20 @@ def _is_needs_update_cleanup_fix_line(line: str) -> bool:
     return "rm -f graphify-out/" in line and "needs_update" in line
 
 
+def _is_graph_loader_fix_line(line: str) -> bool:
+    """Whether a monolith delegates graph.json compatibility to the shared loader."""
+    return line.strip() in {
+        "from networkx.readwrite import json_graph",
+        "from graphify.paths import load_node_link_graph",
+        "G_existing = json_graph.node_link_graph(existing_data, edges='links')",
+        "G_existing = load_node_link_graph(existing_data)",
+        "G_old = json_graph.node_link_graph(old_data, edges='links')",
+        "G_old = load_node_link_graph(old_data)",
+        "G = json_graph.node_link_graph(data, edges='links')",
+        "G = load_node_link_graph(data)",
+    }
+
+
 # Every line that may differ between a rendered monolith and its pristine v8
 # baseline. Each predicate documents one sanctioned change-class; a blank line is
 # allowed because the multi-line fix blocks insert spacing. Anything else failing
@@ -1169,6 +1183,7 @@ _SANCTIONED_MONOLITH_DIFFS = (
     _is_semantic_cache_scope_fix_line,
     _is_community_label_export_fix_line,
     _is_needs_update_cleanup_fix_line,
+    _is_graph_loader_fix_line,
 )
 
 
