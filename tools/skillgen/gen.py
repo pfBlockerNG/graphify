@@ -1162,7 +1162,7 @@ def _is_graph_loader_fix_line(line: str) -> bool:
 
 
 def _is_watch_path_quote_fix_line(line: str) -> bool:
-    """Whether the monolith watch command safely quotes the substituted path."""
+    """Whether a line is the legacy or safely quoted monolith watch command."""
     return line.strip() in {
         "python3 -m graphify.watch INPUT_PATH --debounce 3",
         'python3 -m graphify.watch "INPUT_PATH" --debounce 3',
