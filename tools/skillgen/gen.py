@@ -169,15 +169,15 @@ _AGENTS_MD_HOOKS: dict[str, dict[str, str]] = {
     "trae": {
         "heading_suffix": " (Trae)",
         "host_display": "Trae",
-        "install_block": "graphify trae install       # or: graphify trae-cn install",
-        "uninstall_block": "graphify trae uninstall     # or: graphify trae-cn uninstall   # remove the section",
+        "install_block": "@@GRAPHIFY_CMD@@ trae install       # or: graphify trae-cn install",
+        "uninstall_block": "@@GRAPHIFY_CMD@@ trae uninstall     # or: graphify trae-cn uninstall   # remove the section",
         "pretooluse_note": _TRAE_PRETOOLUSE_NOTE,
     },
     "amp": {
         "heading_suffix": "",
         "host_display": "Amp",
-        "install_block": "graphify amp install",
-        "uninstall_block": "graphify amp uninstall  # remove the section",
+        "install_block": "@@GRAPHIFY_CMD@@ amp install",
+        "uninstall_block": "@@GRAPHIFY_CMD@@ amp uninstall  # remove the section",
         "pretooluse_note": "",
     },
     "agents": {
@@ -186,8 +186,8 @@ _AGENTS_MD_HOOKS: dict[str, dict[str, str]] = {
         # pointing at `graphify agents install` (which wires AGENTS.md, like amp).
         "heading_suffix": "",
         "host_display": "your agent",
-        "install_block": "graphify agents install",
-        "uninstall_block": "graphify agents uninstall  # remove the section",
+        "install_block": "@@GRAPHIFY_CMD@@ agents install",
+        "uninstall_block": "@@GRAPHIFY_CMD@@ agents uninstall  # remove the section",
         "pretooluse_note": "",
     },
 }
@@ -589,9 +589,21 @@ def _render_agents_md_hooks(platform: Platform) -> str:
         .replace("@@AGENTS_UNINSTALL_BLOCK@@", slots["uninstall_block"])
         .replace("@@AGENTS_PRETOOLUSE_NOTE@@", slots["pretooluse_note"])
     )
-    if "@@" in body:
-        leftover = sorted(set(re.findall(r"@@\w+@@", body)))
-        raise ValueError(f"unfilled agents-md hooks slots for '{platform.key}': {leftover}")
+    return _render_reference(body, platform)
+
+
+def _render_reference(body: str, platform: Platform) -> str:
+    """Bind reference command tokens to the platform's recorded interpreter."""
+    posix = _GRAPHIFY_INVOKE_POSIX.rstrip()
+    powershell = _GRAPHIFY_INVOKE_PS.rstrip()
+    command = powershell if platform.shell == "powershell" else posix
+    body = (
+        body.replace("@@GRAPHIFY_CMD_POSIX@@", posix)
+        .replace("@@GRAPHIFY_CMD_POWERSHELL@@", powershell)
+        .replace("@@GRAPHIFY_CMD@@", command)
+    )
+    if "@@GRAPHIFY_CMD" in body:
+        raise ValueError(f"unfilled Graphify command token for '{platform.key}'")
     return _normalise(body)
 
 
@@ -625,6 +637,7 @@ def render(platform: Platform) -> list[RenderedArtifact]:
             body = _render_agents_md_hooks(platform)
         else:
             body = _read_fragment(references[name])
+        body = _render_reference(body, platform)
         rel = f"{platform.refs_dst}/{name}.md"
         artifacts.append(RenderedArtifact(rel, body))
     return artifacts
@@ -1215,6 +1228,25 @@ def _is_ingest_argument_fix_line(line: str) -> bool:
     }
 
 
+def _is_recorded_interpreter_command_fix_line(line: str) -> bool:
+    """Whether a monolith routes a post-install command through its interpreter."""
+    stripped = line.strip()
+    return (
+        stripped.startswith("graphify hook ")
+        or stripped.startswith(_GRAPHIFY_INVOKE_POSIX + "hook ")
+        or stripped in {
+            "graphify claude install",
+            "graphify claude uninstall  # remove the section",
+            "graphify devin install --project",
+            "graphify devin uninstall --project  # remove",
+            _GRAPHIFY_INVOKE_POSIX + "claude install",
+            _GRAPHIFY_INVOKE_POSIX + "claude uninstall  # remove the section",
+            _GRAPHIFY_INVOKE_POSIX + "devin install --project",
+            _GRAPHIFY_INVOKE_POSIX + "devin uninstall --project  # remove",
+        }
+    )
+
+
 def _is_transcription_analysis_fix_line(line: str) -> bool:
     """Whether transcription uses prior analysis rather than detect's nonexistent god nodes."""
     return line.strip() in {
@@ -1252,6 +1284,7 @@ _SANCTIONED_MONOLITH_DIFFS = (
     _is_watch_path_quote_fix_line,
     _is_python_path_argument_fix_line,
     _is_ingest_argument_fix_line,
+    _is_recorded_interpreter_command_fix_line,
     _is_transcription_analysis_fix_line,
 )
 

@@ -159,6 +159,18 @@ def test_rendered_instructions_preserve_scan_root_and_runnable_commands():
             in windows_core.content
         ), command
 
+    for artifact in artifacts:
+        command_fence = False
+        for line in artifact.content.splitlines():
+            if line in {"```bash", "```powershell"}:
+                command_fence = True
+            elif command_fence and line == "```":
+                command_fence = False
+            elif command_fence:
+                assert not line.startswith("graphify "), artifact.path
+
+    assert "complete Step 1 before Step 0" in agents_core.content
+
     transcription_artifacts = [
         artifact
         for artifact in artifacts

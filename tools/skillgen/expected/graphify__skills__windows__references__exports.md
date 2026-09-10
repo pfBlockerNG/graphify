@@ -9,7 +9,7 @@ Load this when the user passed one of the export flags (`--wiki`, `--neo4j`, `--
 Run this before Step 9 (cleanup) so `.graphify_labels.json` is still available.
 
 ```bash
-graphify export wiki
+& (Get-Content graphify-out\.graphify_python) -m graphify export wiki
 ```
 
 ### Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag)
@@ -17,7 +17,7 @@ graphify export wiki
 **If `--neo4j`** - generate a Cypher file for manual import:
 
 ```bash
-graphify export neo4j
+& (Get-Content graphify-out\.graphify_python) -m graphify export neo4j
 ```
 
 **If `--neo4j-push <uri>`** - push directly to a running Neo4j instance. Do not run these blocks through an agent tool: its shell is non-interactive and cannot read a hidden password. Show the block for the user's shell, ask them to run it in their own terminal, and wait for confirmation before continuing. Never ask them to paste the password into chat.
@@ -27,7 +27,7 @@ POSIX shell:
 ```bash
 NEO4J_PASSWORD="$("$(cat graphify-out/.graphify_python)" -c 'import getpass; print(getpass.getpass("Neo4j password: "))')"
 export NEO4J_PASSWORD
-graphify export neo4j --push bolt://localhost:7687 --user neo4j
+$(cat graphify-out/.graphify_python) -m graphify export neo4j --push bolt://localhost:7687 --user neo4j
 unset NEO4J_PASSWORD
 ```
 
@@ -36,7 +36,7 @@ PowerShell:
 ```powershell
 $credential = Read-Host "Neo4j password" -AsSecureString
 $env:NEO4J_PASSWORD = [System.Net.NetworkCredential]::new("", $credential).Password
-graphify export neo4j --push bolt://localhost:7687 --user neo4j
+& (Get-Content graphify-out\.graphify_python) -m graphify export neo4j --push bolt://localhost:7687 --user neo4j
 Remove-Item Env:NEO4J_PASSWORD
 ```
 
@@ -47,13 +47,13 @@ Default URI is `bolt://localhost:7687`, default user is `neo4j`. The command rea
 **If `--falkordb`** - generate a Cypher file. The statements are OpenCypher, but FalkorDB's `GRAPH.QUERY` runs one statement at a time (no bulk script import like Neo4j's `cypher-shell`), so prefer `--falkordb-push` to load a graph. Use this only when you want the portable `cypher.txt` artifact:
 
 ```bash
-graphify export falkordb
+& (Get-Content graphify-out\.graphify_python) -m graphify export falkordb
 ```
 
 **If `--falkordb-push <uri>`** - push directly to a running FalkorDB instance. Credentials are optional; ask the user only if the instance requires auth:
 
 ```bash
-graphify export falkordb --push falkordb://localhost:6379
+& (Get-Content graphify-out\.graphify_python) -m graphify export falkordb --push falkordb://localhost:6379
 ```
 
 Default URI is `falkordb://localhost:6379` (the scheme is informational - `redis://` or a bare `host:port` work too), auth is optional, and the target graph defaults to `graphify`. Uses MERGE - safe to re-run without creating duplicates.
@@ -61,13 +61,13 @@ Default URI is `falkordb://localhost:6379` (the scheme is informational - `redis
 ### Step 7b - SVG export (only if --svg flag)
 
 ```bash
-graphify export svg
+& (Get-Content graphify-out\.graphify_python) -m graphify export svg
 ```
 
 ### Step 7c - GraphML export (only if --graphml flag)
 
 ```bash
-graphify export graphml
+& (Get-Content graphify-out\.graphify_python) -m graphify export graphml
 ```
 
 ### Step 7d - MCP server (only if --mcp flag)
@@ -95,7 +95,7 @@ To configure in Claude Desktop, add to `claude_desktop_config.json`. Claude Desk
 If `total_words` from `graphify-out/.graphify_detect.json` is greater than 5,000, run:
 
 ```bash
-graphify benchmark
+& (Get-Content graphify-out\.graphify_python) -m graphify benchmark
 ```
 
 Print the output directly in chat. If `total_words <= 5000`, skip silently - the graph value is structural clarity, not token compression, for small corpora.

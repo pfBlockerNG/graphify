@@ -1378,9 +1378,9 @@ Press Ctrl+C to stop.
 Install a post-commit hook that auto-rebuilds the graph after every commit. No background process needed - triggers once per commit, works with any editor.
 
 ```bash
-graphify hook install    # install
-graphify hook uninstall  # remove
-graphify hook status     # check
+$(cat graphify-out/.graphify_python) -m graphify hook install    # install
+$(cat graphify-out/.graphify_python) -m graphify hook uninstall  # remove
+$(cat graphify-out/.graphify_python) -m graphify hook status     # check
 ```
 
 After every `git commit`, the hook detects which code files changed, re-runs AST extraction on those files, and rebuilds `graph.json` and `GRAPH_REPORT.md`. Doc/image changes are ignored by the hook - run `/graphify --update` manually for those.
@@ -1392,13 +1392,13 @@ After every `git commit`, the hook detects which code files changed, re-runs AST
 Run once per project to make graphify always-on in Devin sessions:
 
 ```bash
-graphify devin install --project
+$(cat graphify-out/.graphify_python) -m graphify devin install --project
 ```
 
 This writes a `## graphify` section to `.windsurf/rules/graphify.md` that instructs Devin to check the graph before answering codebase questions and rebuild it after code changes.
 
 ```bash
-graphify devin uninstall --project  # remove
+$(cat graphify-out/.graphify_python) -m graphify devin uninstall --project  # remove
 ```
 
 ---

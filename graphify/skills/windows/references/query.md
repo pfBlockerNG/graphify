@@ -64,8 +64,8 @@ Build the **expanded query string** by joining the selected tokens with spaces. 
 
 Prefer the CLI when it is installed:
 ```bash
-graphify query "QUESTION"
-# or: graphify query "QUESTION" --dfs --budget 3000
+& (Get-Content graphify-out\.graphify_python) -m graphify query "QUESTION"
+# Add `--dfs --budget 3000` for a depth-first traversal with a larger budget.
 ```
 
 If the CLI is unavailable, load `graphify-out/graph.json` and run the traversal inline:
@@ -188,7 +188,7 @@ At the **start** of graph work, refresh and read the lessons: run `graphify refl
 Find the shortest path between two named concepts in the graph. Prefer the CLI when installed:
 
 ```bash
-graphify path "NODE_A" "NODE_B"
+& (Get-Content graphify-out\.graphify_python) -m graphify path "NODE_A" "NODE_B"
 ```
 
 If the CLI is unavailable, run it inline:
@@ -256,7 +256,7 @@ $(cat graphify-out/.graphify_python) -m graphify save-result --question "Path fr
 Give a plain-language explanation of a single node - everything connected to it. Prefer the CLI when installed:
 
 ```bash
-graphify explain "NODE_NAME"
+& (Get-Content graphify-out\.graphify_python) -m graphify explain "NODE_NAME"
 ```
 
 If the CLI is unavailable, run it inline:
