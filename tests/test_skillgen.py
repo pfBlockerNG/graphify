@@ -58,6 +58,39 @@ def test_render_output_is_lf_only():
         assert not art.content.endswith("\n\n"), art.path
 
 
+def test_rendered_instructions_preserve_scan_root_and_runnable_commands():
+    """Generated agent instructions must remain safe for real roots and flags."""
+    platforms = gen.load_platforms()
+    artifacts = gen.render_all(platforms)
+    posix_cores = [
+        artifact
+        for artifact in artifacts
+        if 'echo "$(cd' in artifact.content
+    ]
+    assert posix_cores
+    for artifact in posix_cores:
+        assert 'cd "INPUT_PATH"' in artifact.content, artifact.path
+        assert (
+            "import sys, json\n"
+            "from graphify.extract import collect_files, extract\n"
+            "from pathlib import Path\n"
+            "import json\n"
+        ) not in artifact.content, artifact.path
+        assert "graphify export html --no-viz" not in artifact.content, artifact.path
+
+    add_watch = [
+        artifact
+        for artifact in artifacts
+        if artifact.path.endswith("/references/add-watch.md")
+    ]
+    assert add_watch
+    for artifact in add_watch:
+        assert (
+            "run the `--update` pipeline on the scan root recorded in "
+            "`graphify-out/.graphify_root`"
+        ) in artifact.content, artifact.path
+
+
 def test_no_version_or_timestamp_in_output():
     """No generated artifact carries the package version string."""
     from graphify.__main__ import __version__
