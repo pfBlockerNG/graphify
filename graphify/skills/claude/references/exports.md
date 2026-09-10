@@ -20,7 +20,7 @@ graphify export wiki
 graphify export neo4j
 ```
 
-**If `--neo4j-push <uri>`** - push directly to a running Neo4j instance. Ask the user for credentials if not provided. Set `NEO4J_PASSWORD` with a hidden prompt, then remove it after the command. Use the block for the current shell.
+**If `--neo4j-push <uri>`** - push directly to a running Neo4j instance. Do not run these blocks through an agent tool: its shell is non-interactive and cannot read a hidden password. Show the block for the user's shell, ask them to run it in their own terminal, and wait for confirmation before continuing. Never ask them to paste the password into chat.
 
 POSIX shell:
 

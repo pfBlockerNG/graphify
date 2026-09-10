@@ -103,6 +103,7 @@ def test_rendered_instructions_preserve_scan_root_and_runnable_commands():
     for artifact in exports:
         assert "getpass.getpass" in artifact.content, artifact.path
         assert 'Read-Host "Neo4j password" -AsSecureString' in artifact.content, artifact.path
+        assert "Do not run these blocks through an agent tool" in artifact.content, artifact.path
 
     labeling_cores = [
         artifact
