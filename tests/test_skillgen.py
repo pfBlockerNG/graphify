@@ -116,6 +116,26 @@ def test_rendered_instructions_preserve_scan_root_and_runnable_commands():
         assert "'INPUT_PATH'" not in artifact.content, artifact.path
         assert "'SPEC_PATH'" not in artifact.content, artifact.path
 
+    ingest_artifacts = [
+        artifact
+        for artifact in artifacts
+        if "from graphify.ingest import ingest" in artifact.content
+    ]
+    assert ingest_artifacts
+    for artifact in ingest_artifacts:
+        assert (
+            "out = ingest(sys.argv[1], Path('./raw'), author=sys.argv[2] or None, "
+            "contributor=sys.argv[3] or None)"
+        ) in artifact.content, artifact.path
+        assert "ingest('URL'" not in artifact.content, artifact.path
+        argv_close = (
+            gen._PY_INVOKE_PS_CLOSE + ' "URL" "AUTHOR" "CONTRIBUTOR"'
+            if artifact.path == "graphify/skill-windows.md"
+            else '" "URL" "AUTHOR" "CONTRIBUTOR"'
+        )
+        assert argv_close in artifact.content, artifact.path
+
+
     agents_core = next(
         artifact
         for artifact in artifacts
@@ -125,6 +145,19 @@ def test_rendered_instructions_preserve_scan_root_and_runnable_commands():
     assert "After each Agent call completes" not in agents_core.content
     assert "You MUST use the subagent tool here" in agents_core.content
     assert "After each subagent call completes" in agents_core.content
+    for command in (
+        "export obsidian",
+        "export html",
+        'query "<question>"',
+    ):
+        assert (
+            f"$(cat graphify-out/.graphify_python) -m graphify {command}"
+            in agents_core.content
+        ), command
+        assert (
+            f"& (Get-Content graphify-out\\.graphify_python) -m graphify {command}"
+            in windows_core.content
+        ), command
 
     transcription_artifacts = [
         artifact

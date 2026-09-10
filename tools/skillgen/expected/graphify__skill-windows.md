@@ -564,14 +564,14 @@ If `--obsidian` was given:
 - If `--obsidian-dir <path>` was also given, pass it via `--dir`. Otherwise defaults to `graphify-out/obsidian`.
 
 ```powershell
-graphify export obsidian
-# or with custom dir: graphify export obsidian --dir ~/vaults/my-project
+& (Get-Content graphify-out\.graphify_python) -m graphify export obsidian
+# Add `--dir ~/vaults/my-project` to use a custom directory.
 ```
 
 Generate the HTML graph (always, unless `--no-viz`):
 
 ```powershell
-graphify export html  # auto-aggregates to community view if graph > 5000 nodes
+& (Get-Content graphify-out\.graphify_python) -m graphify export html  # auto-aggregates to community view if graph > 5000 nodes
 ```
 
 ### Steps 6b-8 - Wiki, Neo4j, FalkorDB, SVG, GraphML, MCP, benchmark (only on their flags)
@@ -713,7 +713,7 @@ Both are non-default subcommands. `--update` re-extracts only new or changed fil
 When `graphify-out/graph.json` already exists and the user asks a question about the corpus, answer from the graph rather than rebuilding it:
 
 ```powershell
-graphify query "<question>"
+& (Get-Content graphify-out\.graphify_python) -m graphify query "<question>"
 ```
 
 Before traversal, expand the question against the graph's own vocabulary so a wording mismatch does not collapse the answer to noise. If the `graphify query` CLI is unavailable, fall back to an inline NetworkX traversal of `graphify-out/graph.json`. Answer using only what the graph output contains, and quote `source_location` when citing a specific fact. For that vocab-expansion step, the BFS/DFS traversal modes, the `--budget` cap, the NetworkX fallback, `save-result` feedback, and the `/graphify path` and `/graphify explain` flows, see `references/query.md`.

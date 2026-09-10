@@ -472,14 +472,14 @@ If `--obsidian` was given:
 - If `--obsidian-dir <path>` was also given, pass it via `--dir`. Otherwise defaults to `graphify-out/obsidian`.
 
 ```bash
-graphify export obsidian
-# or with custom dir: graphify export obsidian --dir ~/vaults/my-project
+$(cat graphify-out/.graphify_python) -m graphify export obsidian
+# Add `--dir ~/vaults/my-project` to use a custom directory.
 ```
 
 Generate the HTML graph (always, unless `--no-viz`):
 
 ```bash
-graphify export html  # auto-aggregates to community view if graph > 5000 nodes
+$(cat graphify-out/.graphify_python) -m graphify export html  # auto-aggregates to community view if graph > 5000 nodes
 ```
 
 ### Steps 6b-8 - Wiki, Neo4j, FalkorDB, SVG, GraphML, MCP, benchmark (only on their flags)

@@ -388,6 +388,9 @@ _PY_CLOSE_TRANSLATIONS = {
     '"': _PY_INVOKE_PS_CLOSE,
     '" "INPUT_PATH"': _PY_INVOKE_PS_CLOSE + ' "INPUT_PATH"',
     '" "INPUT_PATH" "SPEC_PATH"': _PY_INVOKE_PS_CLOSE + ' "INPUT_PATH" "SPEC_PATH"',
+    '" "URL" "AUTHOR" "CONTRIBUTOR"': (
+        _PY_INVOKE_PS_CLOSE + ' "URL" "AUTHOR" "CONTRIBUTOR"'
+    ),
 }
 _MKDIR_POSIX = "mkdir -p graphify-out"
 _MKDIR_PS = "New-Item -ItemType Directory -Force -Path graphify-out | Out-Null"
@@ -399,6 +402,8 @@ _FIND_CHUNKS_PS = (
 
 # Bash-only tokens that must never survive in a powershell-shell render.
 _POWERSHELL_BANNED_TOKENS = ("$(cat ", "rm -f ", "2>/dev/null", "```bash")
+_GRAPHIFY_INVOKE_POSIX = "$(cat graphify-out/.graphify_python) -m graphify "
+_GRAPHIFY_INVOKE_PS = "& (Get-Content graphify-out\\.graphify_python) -m graphify "
 
 
 def _unescape_bash_dq(line: str) -> str:
@@ -453,8 +458,10 @@ def _translate_bash_block(lines: list[str]) -> list[str]:
             out.append(_FIND_CHUNKS_PS)
         elif line.strip().startswith("rm -f "):
             out.append(_rm_to_remove_item(line))
+        elif line.startswith(_GRAPHIFY_INVOKE_POSIX):
+            out.append(_GRAPHIFY_INVOKE_PS + line.removeprefix(_GRAPHIFY_INVOKE_POSIX))
         elif not line.strip() or line.lstrip().startswith("#") or line.startswith("graphify "):
-            out.append(line)  # blank lines, comments, and graphify CLI calls are shell-neutral
+            out.append(line)  # blanks, comments, and explicit installer commands are shell-neutral
         else:
             raise ValueError(f"cannot translate bash line to PowerShell: {line!r}")
     if in_py:
@@ -1195,6 +1202,19 @@ def _is_python_path_argument_fix_line(line: str) -> bool:
     }
 
 
+def _is_ingest_argument_fix_line(line: str) -> bool:
+    """Whether URL metadata is passed as argv instead of Python source."""
+    return line.strip() in {
+        "out = ingest('URL', Path('./raw'), author='AUTHOR', contributor='CONTRIBUTOR')",
+        "out = ingest(sys.argv[1], Path('./raw'), author=sys.argv[2] or None, contributor=sys.argv[3] or None)",
+        '" "URL" "AUTHOR" "CONTRIBUTOR"',
+        "Replace `URL` with the actual URL, `AUTHOR` with the user's name if provided, `CONTRIBUTOR` likewise. If the command exits with an error, tell the user what went wrong - do not silently continue. After a successful save, automatically run the `--update` pipeline on `./raw` to merge the new file into the existing graph.",
+        "Replace `URL` with the actual URL and pass the user's `AUTHOR` or `CONTRIBUTOR` when provided; use an empty string for either omitted value. If the command exits with an error, tell the user what went wrong - do not silently continue. After a successful save, automatically run the `--update` pipeline on `./raw` to merge the new file into the existing graph.",
+        "Replace `URL` with the actual URL, `AUTHOR` with the user's name if provided, `CONTRIBUTOR` likewise. After a successful save, automatically run the `--update` pipeline on `./raw` to merge the new file into the existing graph.",
+        "Replace `URL` with the actual URL and pass the user's `AUTHOR` or `CONTRIBUTOR` when provided; use an empty string for either omitted value. After a successful save, automatically run the `--update` pipeline on `./raw` to merge the new file into the existing graph.",
+    }
+
+
 def _is_transcription_analysis_fix_line(line: str) -> bool:
     """Whether transcription uses prior analysis rather than detect's nonexistent god nodes."""
     return line.strip() in {
@@ -1231,6 +1251,7 @@ _SANCTIONED_MONOLITH_DIFFS = (
     _is_graph_loader_fix_line,
     _is_watch_path_quote_fix_line,
     _is_python_path_argument_fix_line,
+    _is_ingest_argument_fix_line,
     _is_transcription_analysis_fix_line,
 )
 

@@ -1200,7 +1200,7 @@ from graphify.ingest import ingest
 from pathlib import Path
 
 try:
-    out = ingest('URL', Path('./raw'), author='AUTHOR', contributor='CONTRIBUTOR')
+    out = ingest(sys.argv[1], Path('./raw'), author=sys.argv[2] or None, contributor=sys.argv[3] or None)
     print(f'Saved to {out}')
 except ValueError as e:
     print(f'error: {e}', file=sys.stderr)
@@ -1208,10 +1208,10 @@ except ValueError as e:
 except RuntimeError as e:
     print(f'error: {e}', file=sys.stderr)
     sys.exit(1)
-"
+" "URL" "AUTHOR" "CONTRIBUTOR"
 ```
 
-Replace `URL` with the actual URL, `AUTHOR` with the user's name if provided, `CONTRIBUTOR` likewise. If the command exits with an error, tell the user what went wrong - do not silently continue. After a successful save, automatically run the `--update` pipeline on `./raw` to merge the new file into the existing graph.
+Replace `URL` with the actual URL and pass the user's `AUTHOR` or `CONTRIBUTOR` when provided; use an empty string for either omitted value. If the command exits with an error, tell the user what went wrong - do not silently continue. After a successful save, automatically run the `--update` pipeline on `./raw` to merge the new file into the existing graph.
 
 Supported URL types (auto-detected):
 - Twitter/X → fetched via oEmbed, saved as `.md` with tweet text and author
