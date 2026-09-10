@@ -85,6 +85,11 @@ def test_rendered_instructions_preserve_scan_root_and_runnable_commands():
     )
     assert '(Resolve-Path "INPUT_PATH").Path' in windows_core.content
 
+    for artifact in artifacts:
+        assert '"id":"auth_session_validatetoken"' not in artifact.content, artifact.path
+        assert "--password PASSWORD" not in artifact.content, artifact.path
+        assert "graphify-out/.needs_update" not in artifact.content, artifact.path
+
     add_watch = [
         artifact
         for artifact in artifacts

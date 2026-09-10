@@ -20,13 +20,13 @@ graphify export wiki
 graphify export neo4j
 ```
 
-**If `--neo4j-push <uri>`** - push directly to a running Neo4j instance. Ask the user for credentials if not provided:
+**If `--neo4j-push <uri>`** - push directly to a running Neo4j instance. Ask the user for credentials if not provided. Put the password in `NEO4J_PASSWORD` without exposing it in shell history or command arguments:
 
 ```bash
-graphify export neo4j --push bolt://localhost:7687 --user neo4j --password PASSWORD
+graphify export neo4j --push bolt://localhost:7687 --user neo4j
 ```
 
-Default URI is `bolt://localhost:7687`, default user is `neo4j`. Uses MERGE - safe to re-run without creating duplicates.
+Default URI is `bolt://localhost:7687`, default user is `neo4j`. The command reads the password from `NEO4J_PASSWORD`. Uses MERGE - safe to re-run without creating duplicates.
 
 ### Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag)
 
