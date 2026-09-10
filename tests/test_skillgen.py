@@ -78,6 +78,13 @@ def test_rendered_instructions_preserve_scan_root_and_runnable_commands():
         ) not in artifact.content, artifact.path
         assert "graphify export html --no-viz" not in artifact.content, artifact.path
 
+    windows_core = next(
+        artifact
+        for artifact in artifacts
+        if artifact.path == "graphify/skill-windows.md"
+    )
+    assert '(Resolve-Path "INPUT_PATH").Path' in windows_core.content
+
     add_watch = [
         artifact
         for artifact in artifacts
