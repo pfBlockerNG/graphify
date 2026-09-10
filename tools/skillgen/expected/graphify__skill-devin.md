@@ -114,12 +114,11 @@ If the import succeeds, print nothing and move straight to Step 2.
 ```bash
 $(cat graphify-out/.graphify_python) -c "
 import json
-import sys
 from graphify.detect import detect
 from pathlib import Path
-result = detect(Path(sys.argv[1]))
+result = detect(Path('INPUT_PATH'))
 print(json.dumps(result))
-" "INPUT_PATH" > graphify-out/.graphify_detect.json
+" > graphify-out/.graphify_detect.json
 ```
 
 Replace INPUT_PATH with the actual path the user provided. Do NOT cat or print the JSON - read it silently and present a clean summary instead:
@@ -147,11 +146,13 @@ Skip this step entirely if `detect` returned zero `video` files.
 
 Video and audio files cannot be read directly. Transcribe them to text first, then treat the transcripts as doc files in Step 3.
 
-**Strategy:** If an analysis file exists from a previous run, read its top god-node labels and write a one-sentence domain hint from them. Otherwise use the generic fallback prompt: `"Use proper punctuation and paragraph breaks."` Pass the chosen prompt to Whisper as its initial prompt. No separate API call needed.
+**Strategy:** Read the god nodes from the detect output or analysis file. You are already a language model - write a one-sentence domain hint yourself from those labels. Then pass it to Whisper as the initial prompt. No separate API call needed.
+
+**However**, if the corpus has *only* video files and no other docs/code, use the generic fallback prompt: `"Use proper punctuation and paragraph breaks."`
 
 **Step 1 - Write the Whisper prompt yourself.**
 
-Read the top god-node labels from previous analysis when available, then compose a short domain hint sentence. With no previous analysis, use the generic fallback above.
+Read the top god node labels from detect output or analysis, then compose a short domain hint sentence, for example:
 
 - Labels: `transformer, attention, encoder, decoder` -> `"Machine learning research on transformer architectures and attention mechanisms. Use proper punctuation and paragraph breaks."`
 - Labels: `kubernetes, deployment, pod, helm` -> `"DevOps discussion about Kubernetes deployments and Helm charts. Use proper punctuation and paragraph breaks."`
@@ -490,7 +491,7 @@ wrote = to_json(G, communities, 'graphify-out/graph.json')
 if not wrote:
     print('ERROR: refused to shrink graphify-out/graph.json (fewer nodes than the existing graph). Run a full rebuild to be safe.')
     raise SystemExit(1)
-report = generate(G, communities, cohesion, labels, gods, surprises, detection, tokens, sys.argv[1], suggested_questions=questions)
+report = generate(G, communities, cohesion, labels, gods, surprises, detection, tokens, 'INPUT_PATH', suggested_questions=questions)
 Path('graphify-out/GRAPH_REPORT.md').write_text(report)
 
 analysis = {
@@ -502,7 +503,7 @@ analysis = {
 }
 Path('graphify-out/.graphify_analysis.json').write_text(json.dumps(analysis, indent=2))
 print(f'Graph: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges, {len(communities)} communities')
-" "INPUT_PATH"
+"
 ```
 
 If this step prints `ERROR: Graph is empty`, stop and tell the user what happened - do not proceed to labeling or visualization.
@@ -540,18 +541,17 @@ labels = LABELS_DICT
 # Regenerate questions with real community labels (labels affect question phrasing)
 questions = suggest_questions(G, communities, labels)
 
-report = generate(G, communities, cohesion, labels, analysis['gods'], analysis['surprises'], detection, tokens, sys.argv[1], suggested_questions=questions)
+report = generate(G, communities, cohesion, labels, analysis['gods'], analysis['surprises'], detection, tokens, 'INPUT_PATH', suggested_questions=questions)
+Path('graphify-out/GRAPH_REPORT.md').write_text(report)
+Path('graphify-out/.graphify_labels.json').write_text(json.dumps({str(k): v for k, v in labels.items()}))
 # Re-export so graph.json nodes carry the curated community_name (#2490).
 # Same extraction as Step 4, so the #479 shrink-guard passes on node count;
 # if it still refuses, surface the guard message - do not force past it.
 wrote = to_json(G, communities, 'graphify-out/graph.json', community_labels=labels)
 if not wrote:
     print('ERROR: refused to shrink graphify-out/graph.json (fewer nodes than the existing graph). Run a full rebuild to be safe.')
-    raise SystemExit(1)
-Path('graphify-out/GRAPH_REPORT.md').write_text(report)
-Path('graphify-out/.graphify_labels.json').write_text(json.dumps({str(k): v for k, v in labels.items()}))
 print('Report updated with community labels')
-" "INPUT_PATH"
+"
 ```
 
 Replace `LABELS_DICT` with the actual dict you constructed (e.g. `{0: "Attention Mechanism", 1: "Training Pipeline"}`).
@@ -796,7 +796,6 @@ Print the output directly in chat. If `total_words <= 5000`, skip silently - the
 ```bash
 $(cat graphify-out/.graphify_python) -c "
 import json
-import sys
 from pathlib import Path
 from datetime import datetime, timezone
 from graphify.detect import save_manifest
@@ -807,13 +806,13 @@ extract = json.loads(Path('graphify-out/.graphify_extract.json').read_text())
 # Stamp only semantic files that produced output so a failed chunk is re-queued next run, not lost (#2015).
 from graphify.cli import _stamped_manifest_files
 _corpus = detect.get('all_files') or detect['files']
-_manifest_files = _stamped_manifest_files(_corpus, extract, Path(sys.argv[1]))
+_manifest_files = _stamped_manifest_files(_corpus, extract, Path('INPUT_PATH'))
 _sem_types = ('document', 'paper', 'image')
 _dispatched = {f for t, fl in detect['files'].items() if t in _sem_types for f in fl}
 _stamped = {f for fl in _manifest_files.values() for f in fl}
 _cleared = _dispatched - _stamped
 _scan = {f for fl in _corpus.values() for f in fl}
-save_manifest(_manifest_files, root=sys.argv[1], scan_corpus=_scan, clear_semantic=_cleared or None)
+save_manifest(_manifest_files, root='INPUT_PATH', scan_corpus=_scan, clear_semantic=_cleared or None)
 
 # Update cumulative cost tracker
 input_tok = extract.get('input_tokens', 0)
@@ -837,9 +836,9 @@ cost_path.write_text(json.dumps(cost, indent=2))
 
 print(f'This run: {input_tok:,} input tokens, {output_tok:,} output tokens')
 print(f'All time: {cost[\"total_input_tokens\"]:,} input, {cost[\"total_output_tokens\"]:,} output ({len(cost[\"runs\"])} runs)')
-" "INPUT_PATH"
+"
 rm -f graphify-out/.graphify_detect.json graphify-out/.graphify_extract.json graphify-out/.graphify_ast.json graphify-out/.graphify_semantic.json graphify-out/.graphify_analysis.json graphify-out/.graphify_labels.json graphify-out/.graphify_incremental.json graphify-out/.graphify_transcripts.json graphify-out/.graphify_old.json; find graphify-out -maxdepth 1 -name '.graphify_chunk_*.json' -delete 2>/dev/null
-rm -f graphify-out/needs_update 2>/dev/null || true
+rm -f graphify-out/.needs_update 2>/dev/null || true
 ```
 
 Tell the user (omit the obsidian line unless --obsidian was given; omit the wiki line unless --wiki was given):
@@ -904,7 +903,7 @@ import sys, json
 from graphify.detect import detect_incremental, save_manifest
 from pathlib import Path
 
-result = detect_incremental(Path(sys.argv[1]))
+result = detect_incremental(Path('INPUT_PATH'))
 new_total = result.get('new_total', 0)
 print(json.dumps(result, indent=2))
 Path('graphify-out/.graphify_incremental.json').write_text(json.dumps(result))
@@ -916,7 +915,7 @@ if deleted:
     print(f'{len(deleted)} deleted file(s) to prune.')
 if new_total > 0:
     print(f'{new_total} new/changed file(s) to re-extract.')
-" "INPUT_PATH"
+"
 ```
 
 If new files exist, first check whether all changed files are code files:
@@ -959,13 +958,13 @@ $(cat graphify-out/.graphify_python) -c "
 import sys, json
 from graphify.build import build_from_json
 from graphify.export import to_json
-from graphify.paths import load_node_link_graph
+from networkx.readwrite import json_graph
 import networkx as nx
 from pathlib import Path
 
 # Load existing graph
 existing_data = json.loads(Path('graphify-out/graph.json').read_text())
-G_existing = load_node_link_graph(existing_data)
+G_existing = json_graph.node_link_graph(existing_data, edges='links')
 
 # Load new extraction
 new_extraction = json.loads(Path('graphify-out/.graphify_extract.json').read_text())
@@ -986,7 +985,7 @@ $(cat graphify-out/.graphify_python) -c "
 import json
 from graphify.analyze import graph_diff
 from graphify.build import build_from_json
-from graphify.paths import load_node_link_graph
+from networkx.readwrite import json_graph
 import networkx as nx
 from pathlib import Path
 
@@ -995,7 +994,7 @@ new_extract = json.loads(Path('graphify-out/.graphify_extract.json').read_text()
 G_new = build_from_json(new_extract, directed=IS_DIRECTED)
 
 if old_data:
-    G_old = load_node_link_graph(old_data)
+    G_old = json_graph.node_link_graph(old_data, edges='links')
     diff = graph_diff(G_old, G_new)
     print(diff['summary'])
     if diff['new_nodes']:
@@ -1021,12 +1020,12 @@ from graphify.cluster import cluster, score_all
 from graphify.analyze import god_nodes, surprising_connections
 from graphify.report import generate
 from graphify.export import to_json
-from graphify.paths import load_node_link_graph
+from networkx.readwrite import json_graph
 import networkx as nx
 from pathlib import Path
 
 data = json.loads(Path('graphify-out/graph.json').read_text())
-G = load_node_link_graph(data)
+G = json_graph.node_link_graph(data, edges='links')
 
 detection = {'total_files': 0, 'total_words': 99999, 'needs_graph': True, 'warning': None,
              'files': {'code': [], 'document': [], 'paper': []}}
@@ -1090,12 +1089,12 @@ Load `graphify-out/graph.json`, then:
 ```bash
 $(cat graphify-out/.graphify_python) -c "
 import sys, json
-from graphify.paths import load_node_link_graph
+from networkx.readwrite import json_graph
 import networkx as nx
 from pathlib import Path
 
 data = json.loads(Path('graphify-out/graph.json').read_text())
-G = load_node_link_graph(data)
+G = json_graph.node_link_graph(data, edges='links')
 
 question = 'QUESTION'
 mode = 'MODE'  # 'bfs' or 'dfs'
@@ -1202,11 +1201,11 @@ if not Path('graphify-out/graph.json').exists():
 $(cat graphify-out/.graphify_python) -c "
 import json, sys
 import networkx as nx
-from graphify.paths import load_node_link_graph
+from networkx.readwrite import json_graph
 from pathlib import Path
 
 data = json.loads(Path('graphify-out/graph.json').read_text())
-G = load_node_link_graph(data)
+G = json_graph.node_link_graph(data, edges='links')
 
 a_term = 'NODE_A'
 b_term = 'NODE_B'
@@ -1274,11 +1273,11 @@ if not Path('graphify-out/graph.json').exists():
 $(cat graphify-out/.graphify_python) -c "
 import json, sys
 import networkx as nx
-from graphify.paths import load_node_link_graph
+from networkx.readwrite import json_graph
 from pathlib import Path
 
 data = json.loads(Path('graphify-out/graph.json').read_text())
-G = load_node_link_graph(data)
+G = json_graph.node_link_graph(data, edges='links')
 
 term = 'NODE_NAME'
 term_lower = term.lower()
@@ -1332,7 +1331,7 @@ from graphify.ingest import ingest
 from pathlib import Path
 
 try:
-    out = ingest(sys.argv[1], Path('./raw'), author=sys.argv[2] or None, contributor=sys.argv[3] or None)
+    out = ingest('URL', Path('./raw'), author='AUTHOR', contributor='CONTRIBUTOR')
     print(f'Saved to {out}')
 except ValueError as e:
     print(f'error: {e}', file=sys.stderr)
@@ -1340,10 +1339,10 @@ except ValueError as e:
 except RuntimeError as e:
     print(f'error: {e}', file=sys.stderr)
     sys.exit(1)
-" "URL" "AUTHOR" "CONTRIBUTOR"
+"
 ```
 
-Replace `URL` with the actual URL and pass the user's `AUTHOR` or `CONTRIBUTOR` when provided; use an empty string for either omitted value. After a successful save, automatically run the `--update` pipeline on `./raw` to merge the new file into the existing graph.
+Replace `URL` with the actual URL, `AUTHOR` with the user's name if provided, `CONTRIBUTOR` likewise. After a successful save, automatically run the `--update` pipeline on `./raw` to merge the new file into the existing graph.
 
 Supported URL types (auto-detected):
 - Twitter/X -> fetched via oEmbed, saved as `.md` with tweet text and author
@@ -1359,7 +1358,7 @@ Supported URL types (auto-detected):
 Start a background watcher that monitors a folder and auto-updates the graph when files change.
 
 ```bash
-python3 -m graphify.watch "INPUT_PATH" --debounce 3
+python3 -m graphify.watch INPUT_PATH --debounce 3
 ```
 
 Replace INPUT_PATH with the folder to watch. Behavior depends on what changed:

@@ -20,27 +20,13 @@ graphify export wiki
 graphify export neo4j
 ```
 
-**If `--neo4j-push <uri>`** - push directly to a running Neo4j instance. Do not run these blocks through an agent tool: its shell is non-interactive and cannot read a hidden password. Show the block for the user's shell, ask them to run it in their own terminal, and wait for confirmation before continuing. Never ask them to paste the password into chat.
-
-POSIX shell:
+**If `--neo4j-push <uri>`** - push directly to a running Neo4j instance. Ask the user for credentials if not provided:
 
 ```bash
-NEO4J_PASSWORD="$("$(cat graphify-out/.graphify_python)" -c 'import getpass; print(getpass.getpass("Neo4j password: "))')"
-export NEO4J_PASSWORD
-graphify export neo4j --push bolt://localhost:7687 --user neo4j
-unset NEO4J_PASSWORD
+graphify export neo4j --push bolt://localhost:7687 --user neo4j --password PASSWORD
 ```
 
-PowerShell:
-
-```powershell
-$credential = Read-Host "Neo4j password" -AsSecureString
-$env:NEO4J_PASSWORD = [System.Net.NetworkCredential]::new("", $credential).Password
-graphify export neo4j --push bolt://localhost:7687 --user neo4j
-Remove-Item Env:NEO4J_PASSWORD
-```
-
-Default URI is `bolt://localhost:7687`, default user is `neo4j`. The command reads the password from `NEO4J_PASSWORD`. Uses MERGE - safe to re-run without creating duplicates.
+Default URI is `bolt://localhost:7687`, default user is `neo4j`. Uses MERGE - safe to re-run without creating duplicates.
 
 ### Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag)
 

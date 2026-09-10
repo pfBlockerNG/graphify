@@ -79,12 +79,12 @@ If the CLI is unavailable, load `graphify-out/graph.json` and run the traversal 
 ```bash
 $(cat graphify-out/.graphify_python) -c "
 import sys, json
-from graphify.paths import load_node_link_graph
+from networkx.readwrite import json_graph
 import networkx as nx
 from pathlib import Path
 
 data = json.loads(Path('graphify-out/graph.json').read_text(encoding='utf-8'))
-G = load_node_link_graph(data)
+G = json_graph.node_link_graph(data, edges='links')
 
 question = 'QUESTION'
 mode = 'MODE'  # 'bfs' or 'dfs'
@@ -197,11 +197,11 @@ If the CLI is unavailable, run it inline:
 $(cat graphify-out/.graphify_python) -c "
 import json, sys
 import networkx as nx
-from graphify.paths import load_node_link_graph
+from networkx.readwrite import json_graph
 from pathlib import Path
 
 data = json.loads(Path('graphify-out/graph.json').read_text(encoding='utf-8'))
-G = load_node_link_graph(data)
+G = json_graph.node_link_graph(data, edges='links')
 
 a_term = 'NODE_A'
 b_term = 'NODE_B'
@@ -265,11 +265,11 @@ If the CLI is unavailable, run it inline:
 $(cat graphify-out/.graphify_python) -c "
 import json, sys
 import networkx as nx
-from graphify.paths import load_node_link_graph
+from networkx.readwrite import json_graph
 from pathlib import Path
 
 data = json.loads(Path('graphify-out/graph.json').read_text(encoding='utf-8'))
-G = load_node_link_graph(data)
+G = json_graph.node_link_graph(data, edges='links')
 
 term = 'NODE_NAME'
 term_lower = term.lower()

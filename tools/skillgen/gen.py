@@ -384,14 +384,6 @@ def _render_frontmatter(platform: Platform) -> str:
 _PY_INVOKE_POSIX = '$(cat graphify-out/.graphify_python) -c "'
 _PY_INVOKE_PS_OPEN = "@'"
 _PY_INVOKE_PS_CLOSE = "'@ | & (Get-Content graphify-out\\.graphify_python) -"
-_PY_CLOSE_TRANSLATIONS = {
-    '"': _PY_INVOKE_PS_CLOSE,
-    '" "INPUT_PATH"': _PY_INVOKE_PS_CLOSE + ' "INPUT_PATH"',
-    '" "INPUT_PATH" "SPEC_PATH"': _PY_INVOKE_PS_CLOSE + ' "INPUT_PATH" "SPEC_PATH"',
-    '" "URL" "AUTHOR" "CONTRIBUTOR"': (
-        _PY_INVOKE_PS_CLOSE + ' "URL" "AUTHOR" "CONTRIBUTOR"'
-    ),
-}
 _MKDIR_POSIX = "mkdir -p graphify-out"
 _MKDIR_PS = "New-Item -ItemType Directory -Force -Path graphify-out | Out-Null"
 _FIND_CHUNKS_POSIX = "find graphify-out -maxdepth 1 -name '.graphify_chunk_*.json' -delete 2>/dev/null"
@@ -402,8 +394,6 @@ _FIND_CHUNKS_PS = (
 
 # Bash-only tokens that must never survive in a powershell-shell render.
 _POWERSHELL_BANNED_TOKENS = ("$(cat ", "rm -f ", "2>/dev/null", "```bash")
-_GRAPHIFY_INVOKE_POSIX = "$(cat graphify-out/.graphify_python) -m graphify "
-_GRAPHIFY_INVOKE_PS = "& (Get-Content graphify-out\\.graphify_python) -m graphify "
 
 
 def _unescape_bash_dq(line: str) -> str:
@@ -444,8 +434,8 @@ def _translate_bash_block(lines: list[str]) -> list[str]:
     in_py = False
     for line in lines:
         if in_py:
-            if line in _PY_CLOSE_TRANSLATIONS:
-                out.append(_PY_CLOSE_TRANSLATIONS[line])
+            if line == '"':
+                out.append(_PY_INVOKE_PS_CLOSE)
                 in_py = False
             else:
                 out.append(_unescape_bash_dq(line))
@@ -458,10 +448,8 @@ def _translate_bash_block(lines: list[str]) -> list[str]:
             out.append(_FIND_CHUNKS_PS)
         elif line.strip().startswith("rm -f "):
             out.append(_rm_to_remove_item(line))
-        elif line.startswith(_GRAPHIFY_INVOKE_POSIX):
-            out.append(_GRAPHIFY_INVOKE_PS + line.removeprefix(_GRAPHIFY_INVOKE_POSIX))
         elif not line.strip() or line.lstrip().startswith("#") or line.startswith("graphify "):
-            out.append(line)  # blanks, comments, and explicit installer commands are shell-neutral
+            out.append(line)  # blank lines, comments, and graphify CLI calls are shell-neutral
         else:
             raise ValueError(f"cannot translate bash line to PowerShell: {line!r}")
     if in_py:
@@ -1154,78 +1142,6 @@ def _is_community_label_export_fix_line(line: str) -> bool:
     )
 
 
-def _is_needs_update_cleanup_fix_line(line: str) -> bool:
-    """Whether cleanup targets the watcher's actual ``needs_update`` flag."""
-    return "rm -f graphify-out/" in line and "needs_update" in line
-
-
-def _is_graph_loader_fix_line(line: str) -> bool:
-    """Whether a monolith delegates graph.json compatibility to the shared loader."""
-    return line.strip() in {
-        "from networkx.readwrite import json_graph",
-        "from graphify.paths import load_node_link_graph",
-        "G_existing = json_graph.node_link_graph(existing_data, edges='links')",
-        "G_existing = load_node_link_graph(existing_data)",
-        "G_old = json_graph.node_link_graph(old_data, edges='links')",
-        "G_old = load_node_link_graph(old_data)",
-        "G = json_graph.node_link_graph(data, edges='links')",
-        "G = load_node_link_graph(data)",
-    }
-
-
-def _is_watch_path_quote_fix_line(line: str) -> bool:
-    """Whether a line is the legacy or safely quoted monolith watch command."""
-    return line.strip() in {
-        "python3 -m graphify.watch INPUT_PATH --debounce 3",
-        'python3 -m graphify.watch "INPUT_PATH" --debounce 3',
-    }
-
-
-def _is_python_path_argument_fix_line(line: str) -> bool:
-    """Whether a monolith passes INPUT_PATH as argv instead of Python source."""
-    return line.strip() in {
-        "import sys",
-        "result = detect(Path('INPUT_PATH'))",
-        "result = detect(Path(sys.argv[1]))",
-        "result = detect_incremental(Path('INPUT_PATH'))",
-        "result = detect_incremental(Path(sys.argv[1]))",
-        '"',
-        '" "INPUT_PATH"',
-        '" > .graphify_detect.json',
-        '" "INPUT_PATH" > .graphify_detect.json',
-        '" > graphify-out/.graphify_detect.json',
-        '" "INPUT_PATH" > graphify-out/.graphify_detect.json',
-        "report = generate(G, communities, cohesion, labels, gods, surprises, detection, tokens, 'INPUT_PATH', suggested_questions=questions)",
-        "report = generate(G, communities, cohesion, labels, gods, surprises, detection, tokens, sys.argv[1], suggested_questions=questions)",
-        "report = generate(G, communities, cohesion, labels, analysis['gods'], analysis['surprises'], detection, tokens, 'INPUT_PATH', suggested_questions=questions)",
-        "report = generate(G, communities, cohesion, labels, analysis['gods'], analysis['surprises'], detection, tokens, sys.argv[1], suggested_questions=questions)",
-    }
-
-
-def _is_ingest_argument_fix_line(line: str) -> bool:
-    """Whether URL metadata is passed as argv instead of Python source."""
-    return line.strip() in {
-        "out = ingest('URL', Path('./raw'), author='AUTHOR', contributor='CONTRIBUTOR')",
-        "out = ingest(sys.argv[1], Path('./raw'), author=sys.argv[2] or None, contributor=sys.argv[3] or None)",
-        '" "URL" "AUTHOR" "CONTRIBUTOR"',
-        "Replace `URL` with the actual URL, `AUTHOR` with the user's name if provided, `CONTRIBUTOR` likewise. If the command exits with an error, tell the user what went wrong - do not silently continue. After a successful save, automatically run the `--update` pipeline on `./raw` to merge the new file into the existing graph.",
-        "Replace `URL` with the actual URL and pass the user's `AUTHOR` or `CONTRIBUTOR` when provided; use an empty string for either omitted value. If the command exits with an error, tell the user what went wrong - do not silently continue. After a successful save, automatically run the `--update` pipeline on `./raw` to merge the new file into the existing graph.",
-        "Replace `URL` with the actual URL, `AUTHOR` with the user's name if provided, `CONTRIBUTOR` likewise. After a successful save, automatically run the `--update` pipeline on `./raw` to merge the new file into the existing graph.",
-        "Replace `URL` with the actual URL and pass the user's `AUTHOR` or `CONTRIBUTOR` when provided; use an empty string for either omitted value. After a successful save, automatically run the `--update` pipeline on `./raw` to merge the new file into the existing graph.",
-    }
-
-
-def _is_transcription_analysis_fix_line(line: str) -> bool:
-    """Whether transcription uses prior analysis rather than detect's nonexistent god nodes."""
-    return line.strip() in {
-        '**Strategy:** Read the god nodes from the detect output or analysis file. You are already a language model - write a one-sentence domain hint yourself from those labels. Then pass it to Whisper as the initial prompt. No separate API call needed.',
-        '**However**, if the corpus has *only* video files and no other docs/code, use the generic fallback prompt: `"Use proper punctuation and paragraph breaks."`',
-        'Read the top god node labels from detect output or analysis, then compose a short domain hint sentence, for example:',
-        '**Strategy:** If an analysis file exists from a previous run, read its top god-node labels and write a one-sentence domain hint from them. Otherwise use the generic fallback prompt: `"Use proper punctuation and paragraph breaks."` Pass the chosen prompt to Whisper as its initial prompt. No separate API call needed.',
-        'Read the top god-node labels from previous analysis when available, then compose a short domain hint sentence. With no previous analysis, use the generic fallback above.',
-    }
-
-
 # Every line that may differ between a rendered monolith and its pristine v8
 # baseline. Each predicate documents one sanctioned change-class; a blank line is
 # allowed because the multi-line fix blocks insert spacing. Anything else failing
@@ -1247,12 +1163,6 @@ _SANCTIONED_MONOLITH_DIFFS = (
     _is_uv_from_interpreter_fix_line,
     _is_semantic_cache_scope_fix_line,
     _is_community_label_export_fix_line,
-    _is_needs_update_cleanup_fix_line,
-    _is_graph_loader_fix_line,
-    _is_watch_path_quote_fix_line,
-    _is_python_path_argument_fix_line,
-    _is_ingest_argument_fix_line,
-    _is_transcription_analysis_fix_line,
 )
 
 
