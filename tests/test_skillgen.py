@@ -94,6 +94,16 @@ def test_rendered_instructions_preserve_scan_root_and_runnable_commands():
             if line.startswith('{"nodes":'):
                 json.loads(line)
 
+    exports = [
+        artifact
+        for artifact in artifacts
+        if artifact.path.endswith("/references/exports.md")
+    ]
+    assert exports
+    for artifact in exports:
+        assert "getpass.getpass" in artifact.content, artifact.path
+        assert 'Read-Host "Neo4j password" -AsSecureString' in artifact.content, artifact.path
+
     add_watch = [
         artifact
         for artifact in artifacts

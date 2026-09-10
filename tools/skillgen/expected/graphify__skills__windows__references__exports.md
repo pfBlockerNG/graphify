@@ -20,10 +20,24 @@ graphify export wiki
 graphify export neo4j
 ```
 
-**If `--neo4j-push <uri>`** - push directly to a running Neo4j instance. Ask the user for credentials if not provided. Put the password in `NEO4J_PASSWORD` without exposing it in shell history or command arguments:
+**If `--neo4j-push <uri>`** - push directly to a running Neo4j instance. Ask the user for credentials if not provided. Set `NEO4J_PASSWORD` with a hidden prompt, then remove it after the command. Use the block for the current shell.
+
+POSIX shell:
 
 ```bash
+NEO4J_PASSWORD="$("$(cat graphify-out/.graphify_python)" -c 'import getpass; print(getpass.getpass("Neo4j password: "))')"
+export NEO4J_PASSWORD
 graphify export neo4j --push bolt://localhost:7687 --user neo4j
+unset NEO4J_PASSWORD
+```
+
+PowerShell:
+
+```powershell
+$credential = Read-Host "Neo4j password" -AsSecureString
+$env:NEO4J_PASSWORD = [System.Net.NetworkCredential]::new("", $credential).Password
+graphify export neo4j --push bolt://localhost:7687 --user neo4j
+Remove-Item Env:NEO4J_PASSWORD
 ```
 
 Default URI is `bolt://localhost:7687`, default user is `neo4j`. The command reads the password from `NEO4J_PASSWORD`. Uses MERGE - safe to re-run without creating duplicates.
