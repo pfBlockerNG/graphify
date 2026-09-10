@@ -102,6 +102,16 @@ def test_rendered_instructions_preserve_scan_root_and_runnable_commands():
     assert direct_loaders == []
     assert any("load_node_link_graph(" in artifact.content for artifact in artifacts)
 
+    watch_artifacts = [
+        artifact
+        for artifact in artifacts
+        if "graphify.watch" in artifact.content and "INPUT_PATH" in artifact.content
+    ]
+    assert watch_artifacts
+    for artifact in watch_artifacts:
+        assert 'graphify.watch "INPUT_PATH"' in artifact.content, artifact.path
+        assert "graphify.watch INPUT_PATH" not in artifact.content, artifact.path
+
     exports = [
         artifact
         for artifact in artifacts

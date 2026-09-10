@@ -1161,6 +1161,14 @@ def _is_graph_loader_fix_line(line: str) -> bool:
     }
 
 
+def _is_watch_path_quote_fix_line(line: str) -> bool:
+    """Whether the monolith watch command safely quotes the substituted path."""
+    return line.strip() in {
+        "python3 -m graphify.watch INPUT_PATH --debounce 3",
+        'python3 -m graphify.watch "INPUT_PATH" --debounce 3',
+    }
+
+
 # Every line that may differ between a rendered monolith and its pristine v8
 # baseline. Each predicate documents one sanctioned change-class; a blank line is
 # allowed because the multi-line fix blocks insert spacing. Anything else failing
@@ -1184,6 +1192,7 @@ _SANCTIONED_MONOLITH_DIFFS = (
     _is_community_label_export_fix_line,
     _is_needs_update_cleanup_fix_line,
     _is_graph_loader_fix_line,
+    _is_watch_path_quote_fix_line,
 )
 
 

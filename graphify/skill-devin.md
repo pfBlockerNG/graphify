@@ -1359,7 +1359,7 @@ Supported URL types (auto-detected):
 Start a background watcher that monitors a folder and auto-updates the graph when files change.
 
 ```bash
-python3 -m graphify.watch INPUT_PATH --debounce 3
+python3 -m graphify.watch "INPUT_PATH" --debounce 3
 ```
 
 Replace INPUT_PATH with the folder to watch. Behavior depends on what changed:
