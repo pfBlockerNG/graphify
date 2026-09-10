@@ -8,6 +8,7 @@ lives only in the references, and no reference duplicates core content.
 """
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -89,6 +90,9 @@ def test_rendered_instructions_preserve_scan_root_and_runnable_commands():
         assert '"id":"auth_session_validatetoken"' not in artifact.content, artifact.path
         assert "--password PASSWORD" not in artifact.content, artifact.path
         assert "graphify-out/.needs_update" not in artifact.content, artifact.path
+        for line in artifact.content.splitlines():
+            if line.startswith('{"nodes":'):
+                json.loads(line)
 
     add_watch = [
         artifact
