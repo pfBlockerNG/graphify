@@ -104,6 +104,21 @@ def test_rendered_instructions_preserve_scan_root_and_runnable_commands():
         assert "getpass.getpass" in artifact.content, artifact.path
         assert 'Read-Host "Neo4j password" -AsSecureString' in artifact.content, artifact.path
 
+    labeling_cores = [
+        artifact
+        for artifact in artifacts
+        if "# Re-export so graph.json nodes carry the curated community_name" in artifact.content
+    ]
+    assert labeling_cores
+    for artifact in labeling_cores:
+        step_five = artifact.content.split("### Step 5", 1)[1].split("### Step 6", 1)[0]
+        write_graph = step_five.index("wrote = to_json(")
+        shrink_guard = step_five.index("if not wrote:")
+        abort = step_five.index("raise SystemExit(1)", shrink_guard)
+        write_report = step_five.index("GRAPH_REPORT.md")
+        write_labels = step_five.index("graphify_labels.json")
+        assert write_graph < shrink_guard < abort < write_report < write_labels, artifact.path
+
     add_watch = [
         artifact
         for artifact in artifacts
