@@ -111,6 +111,30 @@ def test_rendered_instructions_preserve_scan_root_and_runnable_commands():
     for artifact in watch_artifacts:
         assert 'graphify.watch "INPUT_PATH"' in artifact.content, artifact.path
         assert "graphify.watch INPUT_PATH" not in artifact.content, artifact.path
+        assert "'INPUT_PATH'" not in artifact.content, artifact.path
+        assert "'SPEC_PATH'" not in artifact.content, artifact.path
+
+    agents_core = next(
+        artifact
+        for artifact in artifacts
+        if artifact.path == "graphify/skill-agents.md"
+    )
+    assert "You MUST use the Agent tool here" not in agents_core.content
+    assert "After each Agent call completes" not in agents_core.content
+    assert "You MUST use the subagent tool here" in agents_core.content
+    assert "After each subagent call completes" in agents_core.content
+
+    transcription_artifacts = [
+        artifact
+        for artifact in artifacts
+        if artifact.path.endswith("/references/transcribe.md")
+        or artifact.path in {"graphify/skill-aider.md", "graphify/skill-devin.md"}
+    ]
+    assert transcription_artifacts
+    for artifact in transcription_artifacts:
+        assert "god nodes from" not in artifact.content, artifact.path
+        assert "previous analysis" in artifact.content, artifact.path
+
 
     exports = [
         artifact
@@ -525,7 +549,7 @@ def test_windows_python_step_bodies_match_posix_verbatim():
     for line in claude_core.splitlines():
         if line == gen._PY_INVOKE_POSIX:
             current = []
-        elif current is not None and line == '"':
+        elif current is not None and line in gen._PY_CLOSE_TRANSLATIONS:
             bodies.append("\n".join(gen._unescape_bash_dq(l) for l in current))
             current = None
         elif current is not None:
@@ -551,6 +575,21 @@ def test_powershell_translator_rejects_unknown_bash():
         "Remove-Item -Force -ErrorAction SilentlyContinue graphify-out\\.needs_update"
     )
     assert gen._translate_bash_block([gen._FIND_CHUNKS_POSIX]) == [gen._FIND_CHUNKS_PS]
+
+
+def test_powershell_translator_preserves_python_argv():
+    """Path placeholders remain shell arguments when Python becomes a here-string."""
+    assert gen._translate_bash_block([
+        gen._PY_INVOKE_POSIX,
+        "import sys",
+        "print(sys.argv[1])",
+        '" "INPUT_PATH"',
+    ]) == [
+        gen._PY_INVOKE_PS_OPEN,
+        "import sys",
+        "print(sys.argv[1])",
+        gen._PY_INVOKE_PS_CLOSE + ' "INPUT_PATH"',
+    ]
 
 
 def test_posix_hosts_keep_their_bash_invocations():
@@ -1180,12 +1219,18 @@ def test_semantic_cache_calls_pass_prompt_file_for_every_split_host():
     for a in bodies:
         for call in ("check_semantic_cache(", "save_semantic_cache("):
             line = next(ln for ln in a.content.splitlines() if call in ln and "import" not in ln)
-            assert "prompt_file='SPEC_PATH'" in line, (
-                f"{a.path}: {call} must pass prompt_file so entries are attributed "
-                f"to the extraction prompt (#1939) — got: {line.strip()}"
+            assert "prompt_file=sys.argv[2]" in line, (
+                f"{a.path}: {call} must read the extraction prompt from argv "
+                f"(#1939) — got: {line.strip()}"
             )
         # The placeholder is inert unless the body tells the agent what to substitute.
         assert "SPEC_PATH below is the **absolute** path" in a.content, a.path
+        argv_close = (
+            gen._PY_INVOKE_PS_CLOSE + ' "INPUT_PATH" "SPEC_PATH"'
+            if a.path == "graphify/skill-windows.md"
+            else '" "INPUT_PATH" "SPEC_PATH"'
+        )
+        assert a.content.count(argv_close) == 2, a.path
 
 
 def test_windows_skill_writes_marker_files_without_a_bom():

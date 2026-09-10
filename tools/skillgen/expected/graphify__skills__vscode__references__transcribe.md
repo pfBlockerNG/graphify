@@ -8,13 +8,11 @@ Skip this step entirely if `detect` returned zero `video` files.
 
 Video and audio files cannot be read directly. Transcribe them to text first, then treat the transcripts as doc files in Step 3.
 
-**Strategy:** Read the god nodes from `graphify-out/.graphify_detect.json` (or the analysis file if it exists from a previous run). You are already a language model — write a one-sentence domain hint yourself from those labels. Then pass it to Whisper as the initial prompt. No separate API call needed.
-
-**However**, if the corpus has *only* video files and no other docs/code, use the generic fallback prompt: `"Use proper punctuation and paragraph breaks."`
+**Strategy:** If `graphify-out/.graphify_analysis.json` exists from a previous run, read its top god-node labels and write a one-sentence domain hint from them. Otherwise use the generic fallback prompt: `"Use proper punctuation and paragraph breaks."` Pass the chosen prompt to Whisper as its initial prompt. No separate API call needed.
 
 **Step 1 - Write the Whisper prompt yourself.**
 
-Read the top god node labels from detect output or analysis, then compose a short domain hint sentence, for example:
+Read the top god-node labels from previous analysis when available, then compose a short domain hint sentence. With no previous analysis, use the generic fallback above.
 
 - Labels: `transformer, attention, encoder, decoder` → `"Machine learning research on transformer architectures and attention mechanisms. Use proper punctuation and paragraph breaks."`
 - Labels: `kubernetes, deployment, pod, helm` → `"DevOps discussion about Kubernetes deployments and Helm charts. Use proper punctuation and paragraph breaks."`
