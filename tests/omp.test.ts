@@ -55,6 +55,11 @@ else if (config.mode === "overflow") process.stdout.write("x".repeat(65537));
 else if (config.mode === "delayed") {
   while (!existsSync(${JSON.stringify(join(root, "release"))})) await Bun.sleep(5);
   process.stdout.write(JSON.stringify({hookSpecificOutput: {hookEventName: "PreToolUse", additionalContext: "stale guidance"}}));
+} else if (config.mode === "varying") {
+  const counterFile = ${JSON.stringify(join(root, "count"))};
+  const n = existsSync(counterFile) ? Number(readFileSync(counterFile, "utf8")) || 0 : 0;
+  writeFileSync(counterFile, String(n + 1));
+  process.stdout.write(JSON.stringify({hookSpecificOutput: {hookEventName: "PreToolUse", additionalContext: "guidance " + (n + 1)}}));
 } else if (config.mode === "hung") {
   process.on("SIGTERM", () => {});
   await Bun.sleep(60000);
@@ -116,6 +121,19 @@ test("native grep, bash search, and glob expose the installed CLI's actual guida
     expect(result?.content).toHaveLength(2);
     expect(result?.content?.[1].text).toBe(expected);
   }
+});
+
+test("multi-target glob calls surface every target's guidance", async () => {
+  // The real CLI returns identical fresh text per glob target (its stale check
+  // keys on file_path, which glob payloads do not carry), so a varying fixture
+  // mode distinguishes the per-target guard invocations the extension must join.
+  writeFileSync(control, JSON.stringify({ mode: "varying" }));
+  const api = harness();
+  expect(await api.emit("tool_call", { toolName: "glob", input: { path: "source.py;stale.py" }, toolCallId: "call-1" })).toBeUndefined();
+  const result = await api.emit("tool_result", { toolCallId: "call-1", content: [{ type: "text", text: "ok" }] });
+  expect(result?.content).toHaveLength(2);
+  expect(result?.content?.[1].text).toContain("guidance 1");
+  expect(result?.content?.[1].text).toContain("guidance 2");
 });
 
 test("URLs, internal resources, literal selector-like names and false trust do not run project hooks", async () => {

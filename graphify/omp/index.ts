@@ -106,7 +106,8 @@ export default function graphify(api: ExtensionAPI): void {
           return { block: true, reason: hook.permissionDecisionReason };
         }
         if (typeof hook.additionalContext === "string" && hook.additionalContext.trim()) {
-          pending.set(event.toolCallId, hook.additionalContext);
+          const previous = pending.get(event.toolCallId);
+          pending.set(event.toolCallId, previous ? `${previous}\n\n${hook.additionalContext}` : hook.additionalContext);
         }
         // The search CLI does not inspect individual targets; one call suffices.
         if (toolName === "Grep") break;
@@ -117,7 +118,8 @@ export default function graphify(api: ExtensionAPI): void {
     }
   });
 
-  api.on("tool_result", event => {
+  api.on("tool_result", (event, ctx) => {
+    if (!ctx.isProjectTrusted()) { pending.clear(); return; }
     const nudge = pending.get(event.toolCallId);
     if (nudge === undefined) return;
     pending.delete(event.toolCallId);
