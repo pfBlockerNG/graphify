@@ -299,11 +299,16 @@ def _remove_claude_skill_registration(project_dir: Path) -> None:
     content = claude_md.read_text(encoding="utf-8")
     # Match the exact H1 `# graphify` registration heading, never a substring of a
     # user's `## graphify`/`### graphify` (#2062). Section runs to the next H1.
-    cleaned = _remove_marker_section(content, "# graphify", boundary_prefix="# ")
+    # _SKILL_REGISTRATION_MARKER is the single source of truth for this heading,
+    # shared with _register_always_on_block so an insert and its removal always
+    # agree on what they're matching (#3668).
+    cleaned = _remove_marker_section(content, _SKILL_REGISTRATION_MARKER, boundary_prefix="# ")
     if cleaned is None:
         return
     if cleaned:
-        claude_md.write_text(cleaned + "\n", encoding="utf-8")
+        # newline="" so the rest of the file's own line endings are never
+        # translated on write (#3668, same CRLF issue as the insert side).
+        claude_md.write_text(cleaned + "\n", encoding="utf-8", newline="")
         print(f"  CLAUDE.md        ->  graphify skill registration removed from {claude_md}")
     else:
         claude_md.unlink()
@@ -358,15 +363,30 @@ def _claude_pretooluse_hooks(strict: bool = False, project: bool = False) -> "li
          "hooks": [{"type": "command", "command": read_cmd, "timeout": 10}]},
     ]
 def _skill_registration(skill_path: str = "~/.claude/skills/graphify/SKILL.md") -> str:
+    # Heading is "# graphify" (H1) to match _SKILL_REGISTRATION_MARKER, which
+    # _register_always_on_block anchors its idempotent replace-or-append on.
     return (
-        "\n# graphify\n"
+        "# graphify\n"
         f"- **graphify** (`{skill_path}`) "
         "- any input to knowledge graph. Trigger: `/graphify`\n"
         "When the user types `/graphify`, use the installed graphify skill "
         "or instructions before doing anything else.\n"
     )
 def _register_always_on_block(target: Path, prefix: str, registration: str) -> None:
-    """Append an always-on registration to *target*, degrading instead of raising.
+    """Idempotently add or refresh an always-on registration in *target*, degrading
+    instead of raising.
+
+    Uses _replace_or_append_section (the same marker-anchored helper claude_install
+    and gemini_install already use, here with the H1 boundary_prefix so it stays
+    paired with _remove_claude_skill_registration's own H1 match) rather than a
+    bare append, so a stale or edited block gets refreshed on re-install instead
+    of the bare "graphify" substring check silently treating any unrelated
+    mention of the word as already-registered and skipping every re-run (#3668).
+
+    Written with newline="" so an existing file's own line endings are never
+    translated -- Path.write_text otherwise opens in text mode, which on Windows
+    turns the WHOLE file's pre-existing bare-LF content into CRLF just to append a
+    few lines (#3668).
 
     The skill files are copied before this runs, so a *target* that cannot be
     read or written must not abort an otherwise-complete install (#3474). That
@@ -375,16 +395,19 @@ def _register_always_on_block(target: Path, prefix: str, registration: str) -> N
     stow with read-only sources leave the same shape.
     """
     try:
-        if target.exists():
-            content = target.read_text(encoding="utf-8")
-            if "graphify" in content:
-                print(f"{prefix}already registered (no change)")
-            else:
-                target.write_text(content.rstrip() + registration, encoding="utf-8")
-                print(f"{prefix}skill registered in {target}")
+        existed = target.exists()
+        content = target.read_text(encoding="utf-8") if existed else ""
+        new_content = _replace_or_append_section(
+            content, _SKILL_REGISTRATION_MARKER, registration, boundary_prefix="# "
+        )
+        if existed and new_content == content:
+            print(f"{prefix}already registered (no change)")
+        elif existed:
+            target.write_text(new_content, encoding="utf-8", newline="")
+            print(f"{prefix}skill registered in {target}")
         else:
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(registration.lstrip(), encoding="utf-8")
+            target.write_text(new_content, encoding="utf-8", newline="")
             print(f"{prefix}created at {target}")
     except OSError as exc:
         print(f"{prefix}skipped: {exc.__class__.__name__}: {exc}", file=sys.stderr)
@@ -474,6 +497,14 @@ _PLATFORM_CONFIG: dict[str, dict] = {
         "claude_md": False,
         "skill_refs": "pi",
     },
+    "omp": {
+        # OMP (Oh My Pi) mirrors pi's agent layout under ~/.omp, which the
+        # legacy ~/.pi path is no longer read from.
+        "skill_file": "skill-pi.md",
+        "skill_dst": Path(".omp") / "agent" / "skills" / "graphify" / "SKILL.md",
+        "claude_md": False,
+        "skill_refs": "pi",
+    },
     "codebuddy": {
         # Reuses claude's split bundle (shares skill.md).
         "skill_file": "skill.md",
@@ -542,7 +573,9 @@ _PLATFORM_ALIASES: dict[str, str] = {"skills": "agents"}
 def _canonical_platform(platform_name: str) -> str:
     """Resolve a CLI platform alias to its real _PLATFORM_CONFIG key."""
     return _PLATFORM_ALIASES.get(platform_name, platform_name)
-def _replace_or_append_section(content: str, marker: str, new_section: str) -> str:
+def _replace_or_append_section(
+    content: str, marker: str, new_section: str, boundary_prefix: str = "## "
+) -> str:
     """Idempotently update or append a graphify-owned section in shared files.
 
     If no line is exactly ``marker`` (the heading, at column 0), append
@@ -550,10 +583,15 @@ def _replace_or_append_section(content: str, marker: str, new_section: str) -> s
     content).
 
     If a real ``marker`` heading exists, replace the existing section in place.
-    The section runs from that heading to the line before the next H2 heading
-    (``## `` at line start), or to EOF if no later H2 exists. This lets older
-    installs receive the updated copy without users having to uninstall and
-    reinstall (issue #580).
+    The section runs from that heading to the line before the next
+    ``boundary_prefix`` heading (default the next H2), or to EOF if none
+    follows. This lets older installs receive the updated copy without users
+    having to uninstall and reinstall (issue #580).
+
+    ``boundary_prefix`` must match whatever level ``marker`` itself is (``"# "``
+    for an H1 marker, the default ``"## "`` for an H2 one) — mirrors
+    ``_remove_marker_section``'s own ``boundary_prefix`` so an insert and its
+    matching removal agree on where a section ends (#3668).
 
     The heading is matched only when a line *is* exactly ``marker`` (after
     stripping surrounding whitespace), never as a substring. Matching ``##
@@ -572,7 +610,7 @@ def _replace_or_append_section(content: str, marker: str, new_section: str) -> s
     start = starts[-1]
     end = len(lines)
     for j in range(start + 1, len(lines)):
-        if lines[j].startswith("## "):
+        if lines[j].startswith(boundary_prefix):
             end = j
             break
 
@@ -746,6 +784,14 @@ _CLAUDE_MD_MARKER = "## graphify"
 _CODEBUDDY_MD_MARKER = "## graphify"
 _AGENTS_MD_MARKER = "## graphify"
 _GEMINI_MD_MARKER = "## graphify"
+# Deliberately H1, not H2 like the markers above: this one anchors the SKILL
+# registration block _register_always_on_block writes into .claude/CLAUDE.md
+# (or CODEBUDDY.md), a different section from the "always-on instructions"
+# block the H2 markers above anchor. Kept at H1 specifically so it can never
+# collide with a genuine user-authored "## graphify" heading elsewhere in the
+# same file (#2062) — _remove_claude_skill_registration matches on this same
+# constant so the two stay in sync.
+_SKILL_REGISTRATION_MARKER = "# graphify"
 def _gemini_hook(project: bool = False) -> dict:
     """Gemini CLI BeforeTool hook, resolved to a shell-agnostic `graphify` call.
 
@@ -777,7 +823,10 @@ def gemini_install(project_dir: Path | None = None, *, project: bool = False) ->
     if target.exists() and new_content == target.read_text(encoding="utf-8"):
         print(f"graphify already configured in {target.resolve()} (no change)")
     else:
-        target.write_text(new_content, encoding="utf-8")
+        # newline="" so an existing file's own line endings are never translated
+        # (Path.write_text otherwise opens in text mode, which on Windows turns
+        # the WHOLE file's pre-existing bare-LF content into CRLF, #3668).
+        target.write_text(new_content, encoding="utf-8", newline="")
         print(f"graphify section written to {target.resolve()}")
 
     # Always re-install the Gemini hook so an older payload (e.g. pre-issue-#580
@@ -1660,7 +1709,7 @@ def _project_install(platform_name: str, project_dir: Path | None = None, strict
         skill_dst = _copy_skill_file("antigravity", project=True, project_dir=project_dir)
         _antigravity_finalize(skill_dst, project_dir)
         _print_project_git_add_hint([_project_scope_root(skill_dst, project_dir), project_dir / ".agents"])
-    elif platform_name in ("copilot", "pi", "kimi", "agents"):
+    elif platform_name in ("copilot", "pi", "kimi", "agents", "omp"):
         # Skill-only project install: drop SKILL.md (+ references) at the scope
         # root. `agents` -> ./.agents/skills/graphify/SKILL.md.
         skill_dst = _copy_skill_file(platform_name, project=True, project_dir=project_dir)
@@ -1693,7 +1742,7 @@ def _project_uninstall(platform_name: str, project_dir: Path | None = None) -> N
         _devin_rules_uninstall(project_dir)
         if not removed:
             print("nothing to remove")
-    elif platform_name in ("copilot", "pi", "kimi", "agents"):
+    elif platform_name in ("copilot", "pi", "kimi", "agents", "omp"):
         removed = _remove_skill_file(platform_name, project=True, project_dir=project_dir)
         if not removed:
             print("nothing to remove")
@@ -1882,6 +1931,10 @@ def uninstall_all(project_dir: Path | None = None, purge: bool = False) -> None:
     # The generic agents platform's user-scope skill lives at ~/.agents/skills,
     # which neither the AGENTS.md cleanup nor amp's removal reaches.
     _remove_skill_file("agents")
+    # OMP's user-scope skill lives at ~/.omp/agent/skills. The `graphify omp`
+    # subcommand is the plugin installer, so the skill's removal rides
+    # uninstall_all, like amp and agents.
+    _remove_skill_file("omp")
     _uninstall_opencode_plugin(pd)
     _uninstall_codex_hook(pd)
 
@@ -2088,6 +2141,7 @@ _CLI_INSTALL_COMMANDS = frozenset({
     "kilo",
     "kiro",
     "opencode",
+    "omp",
     "pi",
     "skills",
     "trae",
@@ -2105,6 +2159,25 @@ def dispatch_install_cli(cmd: str) -> bool:
     """
     if cmd not in _CLI_INSTALL_COMMANDS:
         return False
+    if cmd == "omp":
+        # OMP owns package registration; do not duplicate its config/paths here.
+        args = sys.argv[2:]
+        if args not in (["path"], ["install"]):
+            print("Usage: graphify omp [path|install]", file=sys.stderr)
+            sys.exit(1)
+        package_path = Path(__file__).resolve().parent / "omp"
+        if args == ["path"]:
+            print(package_path)
+            return True
+        omp = shutil.which("omp")
+        if not omp:
+            print("error: install Oh My Pi (omp) and add it to PATH first", file=sys.stderr)
+            sys.exit(1)
+        import subprocess
+        result = subprocess.run([omp, "plugin", "install", str(package_path)], check=False)
+        if result.returncode:
+            sys.exit(result.returncode)
+        return True
     if cmd == "install":
         # Default to windows platform on Windows, claude elsewhere
         default_platform = "windows" if platform.system() == "Windows" else "claude"

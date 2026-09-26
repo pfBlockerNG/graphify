@@ -13,6 +13,7 @@ import sys
 import time
 from graphify.paths import GRAPHIFY_OUT as _GRAPHIFY_OUT
 from pathlib import Path, PurePosixPath, PureWindowsPath
+from urllib.parse import unquote, urlsplit
 
 
 _SEARCH_NUDGE = json.dumps({
@@ -894,10 +895,26 @@ def _run_hook_guard(kind: str, strict: bool = False) -> None:
             if explicit:
                 in_project = False
                 for v in explicit:
+                    v = _normalize_hook_path(v)
+                    # A bare www.host/... value is remote only when nothing
+                    # identically named exists locally, mirroring OMP's own
+                    # "an existing local path wins over URL" precedence
+                    # (resolveToolSearchScope). Decided here, not inside
+                    # _is_cwd_relative, which has no cwd/root of its own.
+                    if _is_external_www_target(v, root):
+                        continue
                     p = Path(v)
                     if _is_cwd_relative(v):
                         in_project = True  # relative -> anchored at cwd == in project
                         break
+                    # _is_cwd_relative already rejects a *whole-value*
+                    # scheme://... prefix above (a rootless URL never reaches
+                    # here). This catches the same URL after some upstream
+                    # host has already glued it onto an absolute prefix
+                    # (`<root>/local:/x`), which looks exactly like a real
+                    # file to the containment check below.
+                    if _has_embedded_url_scheme_segment(v):
+                        continue
                     try:
                         p.resolve().relative_to(root)
                         in_project = True
@@ -942,6 +959,73 @@ def _run_hook_guard(kind: str, strict: bool = False) -> None:
         pass
 
 
+_URL_SCHEME_PREFIX_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*://")
+_URL_SCHEME_SEGMENT_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:$")
+_FILE_URL_RE = re.compile(r"^file://", re.IGNORECASE)
+_WWW_HOST_RE = re.compile(r"^www\.", re.IGNORECASE)
+
+
+def _normalize_hook_path(value: str) -> str:
+    r"""Trim padding whitespace and a matching pair of outer double quotes,
+    then strip a *local* leading ``file://`` scheme down to the local path
+    it names.
+
+    Mirrors what OMP's own path pipeline already does to a raw tool argument
+    before a hook would ever see it: ``normalizePathLikeInput`` (trim +
+    de-quote) and ``file://`` -> ``url.fileURLToPath`` (its own
+    ``strictExternalUrlRe`` deliberately omits ``file``, routing it through
+    the ordinary local-file path instead of the external-URL one). The guard
+    must classify identical text identically whether or not a given host
+    bothered to normalize it first -- a classifier that only agrees with its
+    own host after trimming/de-quoting is exactly the kind of gap a prior
+    review flagged.
+
+    Per RFC 8089, a ``file://`` URL is local only when its authority is
+    empty (``file:///path``) or ``localhost``; Node's own
+    ``url.fileURLToPath`` enforces exactly this, throwing
+    ``ERR_INVALID_FILE_URL_HOST`` for any other host. Any other authority
+    names a *remote* host, not a local path -- reducing it here would
+    discard the host and let ``file://evil.com/<in-project path>`` alias a
+    real local file, so it is left untouched for ``_is_foreign_url_scheme``
+    to classify instead.
+    """
+    value = value.strip()
+    if len(value) > 1 and value[0] == value[-1] == '"':
+        value = value[1:-1]
+    if _FILE_URL_RE.match(value):
+        split = urlsplit(value)
+        if split.hostname and split.hostname.lower() != "localhost":
+            return value
+        path = unquote(split.path) or "/"
+        # file:///C:/proj/a.py -> C:/proj/a.py: drop the URL's extra root
+        # slash in front of a Windows drive letter.
+        if os.name == "nt" and re.match(r"^/[A-Za-z]:", path):
+            path = path[1:]
+        return path
+    return value
+
+
+def _is_foreign_url_scheme(value: str) -> bool:
+    """Whether *value* is itself a ``scheme://...`` value -- everything
+    except a *local* ``file://`` (empty or ``localhost`` authority, RFC
+    8089), which ``_normalize_hook_path`` has already reduced to a plain
+    local path by the time this runs, so it never matches here. A
+    ``file://`` with any other authority is NOT reduced by
+    ``_normalize_hook_path`` and so matches here like any other foreign
+    scheme, naming a remote host rather than a local file.
+
+    Deliberately does not enumerate OMP's (or any other harness's) internal
+    scheme allow-list (``local://``, ``artifact://``, ...): this guard is
+    embedded by multiple hosts (#522), and hard-coding one of them would
+    silently stop matching the day that host adds a scheme. Any scheme this
+    function doesn't specifically know to be local -- only a local
+    ``file://`` is -- is treated as not-a-local-source-file: a missed nudge
+    on a remote URL is a far safer wrong answer than a wrong nudge on an
+    unrelated file.
+    """
+    return bool(_URL_SCHEME_PREFIX_RE.match(value))
+
+
 def _is_cwd_relative(value: str) -> bool:
     r"""Whether *value* is anchored at the current working directory.
 
@@ -964,9 +1048,61 @@ def _is_cwd_relative(value: str) -> bool:
     so ``paths.is_absolute_any_platform`` (for stored, portable paths) is
     deliberately not used. On POSIX ``root`` is set exactly when the path is
     absolute and ``drive`` is always empty, so this is unchanged there.
+
+    A URL is rootless and driveless by that exact same test -- ``https://x``
+    and ``myscheme://x`` have no ``root`` and no ``drive`` in either flavour
+    -- so without checking the scheme first, this rule alone short-circuits
+    the caller straight to "in project" for a value that names no filesystem
+    path at all (the bug this guards against, #522 follow-up).
+    ``_normalize_hook_path`` and ``_is_foreign_url_scheme`` reject that
+    shape, and strip a ``file://`` wrapper down to its local path, before
+    the root/drive test below ever runs.
     """
+    value = _normalize_hook_path(value)
+    if _is_foreign_url_scheme(value):
+        return False
     pure = PureWindowsPath(value) if os.name == "nt" else PurePosixPath(value)
     return not pure.root and not pure.drive
+
+
+def _has_embedded_url_scheme_segment(value: str) -> bool:
+    """Whether an already-absolute *value* still carries a collapsed
+    ``scheme://`` marker as one of its OWN path segments, e.g.
+    ``<root>/local:/x`` -- what a naive host-side path-join leaves behind
+    when it glues a rootless ``scheme://...`` value onto a root/cwd prefix
+    instead of routing it through a URL handler, defeating the whole-value
+    check in ``_is_cwd_relative`` above.
+
+    Only meaningful once a value is already known to have a root or drive
+    (``_is_cwd_relative`` returned ``False``): the leading component IS that
+    root/drive marker, so it is skipped here on purpose -- a genuinely
+    relative, colon-bearing POSIX filename like ``C:/proj/a.py`` never
+    reaches this function at all (it takes the cwd-relative shortcut above
+    and stays in-project, matching POSIX semantics where a colon has no
+    special meaning).
+    """
+    pure = PureWindowsPath(value) if os.name == "nt" else PurePosixPath(value)
+    parts = pure.parts[1:] if (pure.root or pure.drive) else pure.parts
+    return any(_URL_SCHEME_SEGMENT_RE.match(part) for part in parts)
+
+
+def _is_external_www_target(value: str, root: "Path") -> bool:
+    """Whether *value* is a bare ``www.host/...`` external-read shape with no
+    identically named local file to override it.
+
+    Mirrors OMP's own ``isReadableUrlPath``/``resolveToolSearchScope``
+    precedence: a ``www.`` value carries no ``://`` at all, so no scheme rule
+    catches it, and it is remote only when nothing local shares its exact
+    name ("an existing local path wins over URL"). A project that genuinely
+    has a top-level path named e.g. ``www.example.com`` stays classified as
+    local; only the common case -- no such path -- is treated as external.
+    """
+    if not _WWW_HOST_RE.match(value):
+        return False
+    try:
+        return not (root / value).exists()
+    except OSError:
+        return False
 
 
 def _target_is_indexed(file_path: str, root: "Path") -> bool:
@@ -2983,19 +3119,63 @@ def dispatch_command(cmd: str) -> None:
         # per-node attribute had the right data all along. Reconstruct from
         # the graph itself so downstream subcommands (html, obsidian, wiki,
         # svg, graphml, neo4j) don't silently produce a degraded artifact.
+        #
+        # Computed unconditionally now (#2386), not just when the sidecar is
+        # missing: the sidecar can also be STALE (present but describing an
+        # earlier clustering pass, since update/watch never regenerate it),
+        # which looks identical from the outside but used to take the other
+        # branch below and silently keep the fossil.
+        reconstructed: dict[int, list[str]] = {}
+        for node_id, data in G.nodes(data=True):
+            cid_raw = data.get("community")
+            if cid_raw is None:
+                continue
+            try:
+                cid = int(cid_raw)
+            except (TypeError, ValueError):
+                continue
+            reconstructed.setdefault(cid, []).append(str(node_id))
         if not communities:
-            reconstructed: dict[int, list[str]] = {}
-            for node_id, data in G.nodes(data=True):
-                cid_raw = data.get("community")
-                if cid_raw is None:
-                    continue
-                try:
-                    cid = int(cid_raw)
-                except (TypeError, ValueError):
-                    continue
-                reconstructed.setdefault(cid, []).append(str(node_id))
             if reconstructed:
                 communities = reconstructed
+        elif reconstructed:
+            # #2386: the sidecar EXISTS but can still be stale, since
+            # update/watch advance graph.json's per-node community attribute
+            # without ever regenerating .graphify_analysis.json. Cheap,
+            # unambiguous signal: compare each side's partition (its set of
+            # community blocks), not the community ids themselves (those can
+            # renumber run to run even for the same partition, #1667) and not
+            # just the flat node-id set either (a merge, split, or a node
+            # moving between communities can leave the overall node set
+            # unchanged while still describing a different partition). A
+            # mismatch means the sidecar was written by an earlier
+            # clustering pass, so prefer the fresh reconstruction instead of
+            # silently exporting a degraded artifact against a clustering
+            # that no longer agrees with it.
+            sidecar_partition = {frozenset(str(n) for n in nodes) for nodes in communities.values()}
+            fresh_partition = {frozenset(nodes) for nodes in reconstructed.values()}
+            if sidecar_partition != fresh_partition:
+                sidecar_node_count = len({n for block in sidecar_partition for n in block})
+                fresh_node_count = len({n for block in fresh_partition for n in block})
+                print(
+                    f"warning: {analysis_path} is stale ({sidecar_node_count} node(s) "
+                    f"recorded vs {fresh_node_count} in graph.json) — reconstructing "
+                    "communities from graph.json instead. Run `graphify cluster-only .` "
+                    "to refresh the sidecar and its cohesion/god-node data.",
+                    file=sys.stderr,
+                )
+                communities = reconstructed
+                from graphify.cluster import score_all as _score_all_export
+                from graphify.analyze import god_nodes as _god_nodes_export
+                cohesion = _score_all_export(G, communities)
+                # god_nodes ranks purely by graph degree, independent of the
+                # community partition, so recompute it directly here instead
+                # of clearing it to an empty list and relying on the wiki
+                # subcommand's own "if not gods_data: recompute" fallback
+                # further down — that fallback happens to cover the only
+                # current consumer, but silently drops real data for any
+                # future one that reads gods_data without the same guard.
+                gods_data = _god_nodes_export(G)
 
         labels: dict[int, str] = {}
         if labels_path.exists():
@@ -3818,12 +3998,17 @@ def dispatch_command(cmd: str) -> None:
                             "file_type": _node.get("file_type"),
                             "type": _node.get("type"),
                         }
-                        for _marker in ("_callable", "_callable_class", "_elixir_module"):
+                        # Keep bounded resolver identity for unchanged nodes;
+                        # these markers cannot be reconstructed from labels.
+                        for _marker in (
+                            "_callable", "_callable_class", "_elixir_module",
+                            "_rust_impl_key", "_rust_declaration_count",
+                        ):
                             if _node.get(_marker):
                                 _ctx_node[_marker] = _node[_marker]
                         _metadata = _node.get("metadata")
                         if isinstance(_metadata, dict):
-                            _ruby_metadata = {
+                            _fwd_metadata = {
                                 key: _metadata[key]
                                 for key in (
                                     "ruby_resolution_schema",
@@ -3831,11 +4016,20 @@ def dispatch_command(cmd: str) -> None:
                                     "ruby_lookup_unsafe",
                                     "ruby_reopened",
                                     "ruby_external_method_owners",
+                                    # Erlang remote-call resolution keys (#3714):
+                                    # an unchanged callee module must keep its
+                                    # module/name/arity so `foo:bar()` still
+                                    # resolves on an incremental rebuild.
+                                    "language",
+                                    "kind",
+                                    "module",
+                                    "name",
+                                    "arity",
                                 )
                                 if key in _metadata
                             }
-                            if _ruby_metadata:
-                                _ctx_node["metadata"] = _ruby_metadata
+                            if _fwd_metadata:
+                                _ctx_node["metadata"] = _fwd_metadata
                         _ctx_nodes.append(_ctx_node)
                     for _edge in _ctx_graph.get(
                         "links", _ctx_graph.get("edges", [])
@@ -4133,6 +4327,14 @@ def dispatch_command(cmd: str) -> None:
             print("[graphify extract] introspecting Cargo workspace...")
             try:
                 cargo_result = introspect_cargo(target)
+            except FileNotFoundError:
+                # No Cargo.toml at the scan root is an ordinary condition
+                # (e.g. Tauri keeps its manifest under src-tauri/), not a
+                # failure — the AST pass already completed and cargo_result
+                # is already the empty, handled shape the merge below
+                # expects, so degrade instead of discarding that work (#3677).
+                print("[graphify extract] --cargo: no Cargo.toml at scan root, "
+                      "skipping crate edges")
             except (ConnectionError, ImportError, OSError) as exc:
                 print(f"error: {exc}", file=sys.stderr)
                 sys.exit(1)
